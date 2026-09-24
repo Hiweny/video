@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>视频卡片收藏夹</title>
+<style>
+  :root{
+    --bg:#0e0e16; --card:#171723; --line:#2a2a3d;
+    --txt:#e8e6f2; --sub:#9a97b0; --accent:#6c5ce7; --danger:#e5484d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--txt); min-height:100vh; padding:28px 16px 80px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin-bottom:6px}
+  .sub{color:var(--sub);font-size:13px;margin-bottom:22px}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+  .panel h2{font-size:14px;margin-bottom:12px;color:var(--txt)}
+  .panel label{font-size:12px;color:var(--sub);display:block;margin-bottom:6px}
+
+  .form{display:flex;flex-direction:column;gap:12px}
+  input[type=url], input[type=text]{
+    width:100%;background:#0c0c14;border:1px solid var(--line);border-radius:10px;
+    color:var(--txt);padding:12px 14px;font-size:14px;outline:none;transition:.15s;
+  }
+  input:focus{border-color:var(--accent)}
+
+  .btn{
+    background:var(--accent);color:#fff;border:none;border-radius:10px;
+    padding:11px 18px;font-size:14px;cursor:pointer;white-space:nowrap;
+  }
+  .btn:active{opacity:.85}
+  .btn.ghost{
+    background:#242438;color:var(--txt);border:1px solid var(--line);
+  }
+  .btn.ghost:hover{background:#2d2d45}
+  .btn.sm{padding:8px 14px;font-size:13px}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .toolbar .spacer{flex:1}
+
+  .list{display:flex;flex-direction:column;gap:18px;margin-top:6px;align-items:center}
+  .empty{color:var(--sub);font-size:14px;text-align:center;padding:40px 0}
+
+  /* 视频卡片 */
+  .vcard{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    overflow:hidden;width:100%;max-width:640px;display:flex;flex-direction:column;
+  }
+  .vcard.portrait{max-width:280px}
+
+  .cover{position:relative;width:100%;background:#000;overflow:hidden}
+  .cover video{display:block;width:100%;height:100%;object-fit:contain;background:#000}
+  .cover .dim{
+    position:absolute;right:8px;top:8px;background:rgba(0,0,0,.55);color:#cfcbe0;
+    font-size:11px;padding:2px 8px;border-radius:20px;pointer-events:none;
+  }
+
+  .meta{display:flex;align-items:center;gap:10px;padding:12px 14px}
+  .info{flex:1;min-width:0}
+  .title{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .time{font-size:11px;color:var(--sub);margin-top:3px}
+  .copy{
+    background:#242438;color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0;
+  }
+  .copy:hover{background:#2d2d45}
+  .copy.done{background:#1e3a2a;border-color:#2f5c43;color:#6ee7a0}
+  .del{
+    background:transparent;color:var(--danger);border:1px solid #3a1f22;border-radius:8px;
+    padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0;
+  }
+  .del:hover{background:#2a181b;border-color:#5a2c31}
+
+  /* 回到顶部按钮 */
+  #backTop{
+    position:fixed;right:22px;bottom:26px;width:46px;height:46px;border-radius:50%;
+    background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:20px;
+    box-shadow:0 4px 16px rgba(108,92,231,.45);
+    opacity:0;transform:translateY(16px);pointer-events:none;
+    transition:opacity .25s, transform .25s;z-index:999;
+  }
+  #backTop.show{
+    opacity:1;transform:translateY(0);pointer-events:auto;
+  }
+  #backTop:hover{filter:brightness(1.1)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 视频卡片收藏夹</h1>
+  <p class="sub">输入 MP4 直链 + 名称，自动读取真实尺寸，卡片按宽高比自适应，收藏自动持久化。</p>
+
+  <!-- 添加面板 -->
+  <div class="panel">
+    <h2>添加视频</h2>
+    <div class="form">
+      <div>
+        <label>MP4 链接</label>
+        <input id="urlInput" type="url" placeholder="https://u.pone.rs/xxxx.mp4">
+      </div>
+      <div>
+        <label>名称</label>
+        <input id="nameInput" type="text" placeholder="给这个视频起个名">
+      </div>
+      <button class="btn" onclick="addCard()">＋ 添加卡片</button>
+    </div>
+  </div>
+
+  <!-- 工具栏：排序 + 导入导出 -->
+  <div class="panel">
+    <div class="toolbar">
+      <button class="btn ghost sm" id="sortBtn" onclick="toggleSort()">⏱ 最新在前</button>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" onclick="exportData()">⬇ 导出</button>
+      <button class="btn ghost sm" onclick="document.getElementById('importFile').click()">⬆ 导入</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importData(event)">
+    </div>
+  </div>
+
+  <div class="list" id="list">
+    <div class="empty">还没有卡片，添加一个试试 👆</div>
+  </div>
+</div>
+
+<button id="backTop" title="回到顶部">↑</button>
+
+<script>
+const STORAGE_KEY = 'videoCardTool_v2';
+
+// 状态：sortOrder / cards[{id,url,name,w,h,addedAt}]
+let state = { sortOrder: 'desc', cards: [] };
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      state = Object.assign({ sortOrder:'desc', cards:[] }, s);
+    }
+  }catch(e){ state = { sortOrder:'desc', cards:[] }; }
+}
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+}
+
+const list = document.getElementById('list');
+
+function fmtTime(ts){
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function sortedCards(){
+  const arr = state.cards.slice();
+  if(state.sortOrder === 'desc') arr.sort((a,b) => b.addedAt - a.addedAt);
+  else arr.sort((a,b) => a.addedAt - b.addedAt);
+  return arr;
+}
+
+function render(){
+  updateSortBtn();
+  const arr = sortedCards();
+  if(arr.length === 0){
+    list.innerHTML = '<div class="empty">还没有卡片，添加一个试试 👆</div>';
+    return;
+  }
+  list.innerHTML = '';
+  arr.forEach(c => list.appendChild(buildCard(c)));
+}
+
+function updateSortBtn(){
+  const b = document.getElementById('sortBtn');
+  b.textContent = state.sortOrder === 'desc' ? '⏱ 最新在前' : '⏱ 最早在前';
+}
+
+function buildCard(c){
+  const card = document.createElement('div');
+  card.className = 'vcard';
+
+  const cover = document.createElement('div');
+  cover.className = 'cover';
+  cover.style.aspectRatio = '16 / 9';
+
+  const video = document.createElement('video');
+  video.src = c.url;
+  video.controls = true;
+  video.playsInline = true;
+  video.preload = 'metadata';
+
+  const dim = document.createElement('div');
+  dim.className = 'dim';
+  dim.textContent = '读取中…';
+
+  cover.appendChild(video);
+  cover.appendChild(dim);
+
+  // 读真实尺寸 → 更新宽高比
+  video.addEventListener('loadedmetadata', () => {
+    const w = video.videoWidth, h = video.videoHeight;
+    if(w && h){
+      c.w = w; c.h = h;
+      cover.style.aspectRatio = (w / h);
+      card.classList.toggle('portrait', h > w);
+      dim.textContent = `${w}×${h}`;
+    } else {
+      dim.textContent = '未知';
+    }
+  });
+  video.addEventListener('error', () => {
+    dim.textContent = '无法加载';
+  });
+
+  // 底部信息条
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+
+  const info = document.createElement('div');
+  info.className = 'info';
+  const title = document.createElement('div');
+  title.className = 'title';
+  title.textContent = c.name || '(未命名)';
+  title.title = c.name || '';
+  const time = document.createElement('div');
+  time.className = 'time';
+  time.textContent = '收藏于 ' + fmtTime(c.addedAt);
+  info.appendChild(title);
+  info.appendChild(time);
+
+  const copy = document.createElement('button');
+  copy.className = 'copy';
+  copy.textContent = '复制';
+  copy.onclick = async () => {
+    try{
+      await navigator.clipboard.writeText(c.url);
+      copy.textContent = '已复制 ✓';
+      copy.classList.add('done');
+      setTimeout(()=>{ copy.textContent = '复制'; copy.classList.remove('done'); }, 1500);
+    }catch(e){
+      copy.textContent = '复制失败';
+      setTimeout(()=>{ copy.textContent = '复制'; }, 1500);
+    }
+  };
+
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.textContent = '删除';
+  del.onclick = () => {
+    state.cards = state.cards.filter(x => x.id !== c.id);
+    save();
+    render();
+  };
+
+  meta.appendChild(info);
+  meta.appendChild(copy);
+  meta.appendChild(del);
+  card.appendChild(cover);
+  card.appendChild(meta);
+  return card;
+}
+
+function addCard(){
+  const url = document.getElementById('urlInput').value.trim();
+  const name = document.getElementById('nameInput').value.trim();
+  if(!url){
+    alert('请先粘贴 MP4 链接');
+    return;
+  }
+  const card = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+    url, name, w:0, h:0, addedAt: Date.now()
+  };
+  state.cards.push(card);
+  save();
+  document.getElementById('urlInput').value = '';
+  document.getElementById('nameInput').value = '';
+  render();
+}
+
+function toggleSort(){
+  state.sortOrder = state.sortOrder === 'desc' ? 'asc' : 'desc';
+  save();
+  render();
+}
+
+function exportData(){
+  // 导出当前显示顺序（已按 sortOrder 排序）
+  const payload = {
+    version: 1,
+    sortOrder: state.sortOrder,
+    exportedAt: new Date().toISOString(),
+    cards: sortedCards()
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  a.href = URL.createObjectURL(blob);
+  a.download = `视频收藏_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function importData(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(reader.result);
+      if(!data || !Array.isArray(data.cards)){
+        alert('文件格式不正确，缺少 cards 字段');
+        return;
+      }
+      if(!confirm(`即将导入 ${data.cards.length} 个视频，将覆盖当前收藏，继续？`)) return;
+      state.sortOrder = data.sortOrder === 'asc' ? 'asc' : 'desc';
+      state.cards = data.cards.map(c => ({
+        id: c.id || (Date.now().toString(36) + Math.random().toString(36).slice(2,7)),
+        url: c.url, name: c.name || '', w: c.w||0, h: c.h||0, addedAt: c.addedAt || Date.now()
+      }));
+      save();
+      render();
+      alert('导入成功 ✅');
+    }catch(e){
+      alert('导入失败：' + e.message);
+    }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+// 回到顶部按钮：往上滑显示，往下滑隐藏
+const backTop = document.getElementById('backTop');
+let lastScrollY = window.scrollY;
+window.addEventListener('scroll', () => {
+  const y = window.scrollY;
+  if(y < lastScrollY && y > 200){
+    backTop.classList.add('show');   // 往上滑 → 显示
+  } else {
+    backTop.classList.remove('show'); // 往下滑 / 接近顶部 → 隐藏
+  }
+  lastScrollY = y;
+}, {passive:true});
+backTop.addEventListener('click', () => {
+  window.scrollTo({top:0, behavior:'smooth'});
+});
+
+// 初始化
+load();
+render();
+</script>
+</body>
+</html>
