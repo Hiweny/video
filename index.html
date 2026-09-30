@@ -114,18 +114,6 @@
   @keyframes sheen{from{background-position:160% 0}to{background-position:-60% 0}}
   .cover.ready .shimmer{display:none}
 
-  /* 中央播放按钮 */
-  .playbtn{
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;z-index:1;
-    background:rgba(12,12,20,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    color:#fff;display:grid;place-items:center;transition:opacity .25s, transform .25s;
-    box-shadow:0 8px 24px -8px rgba(0,0,0,.8);
-  }
-  .playbtn svg{width:24px;height:24px;margin-left:3px}
-  .playbtn:hover{background:rgba(124,108,255,.88)}
-  .playbtn.hide{opacity:0;transform:translate(-50%,-50%) scale(.82);pointer-events:none}
-
   .chip{
     position:absolute;right:9px;top:9px;z-index:2;pointer-events:none;
     background:rgba(10,10,18,.62);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
@@ -159,22 +147,6 @@
   }
   .empty svg{width:46px;height:46px;opacity:.4}
   .empty p{font-size:13.5px}
-
-  /* 存储受限提示 */
-  .notice{
-    display:flex;align-items:flex-start;gap:9px;margin:0 0 18px;
-    background:rgba(124,108,255,.12);border:1px solid rgba(124,108,255,.32);
-    color:#cfc9ff;font-size:12.5px;line-height:1.55;padding:10px 14px;border-radius:12px;
-  }
-
-  /* 诊断面板 */
-  .debug{
-    position:fixed;left:10px;bottom:10px;max-width:92vw;z-index:999;
-    background:rgba(10,10,18,.96);border:1px solid var(--line);border-radius:12px;
-    padding:10px 13px;font-size:11px;line-height:1.75;color:#c9c6dd;word-break:break-all;
-    font-family:ui-monospace,Menlo,Consolas,monospace;box-shadow:var(--shadow);
-  }
-  .debug b{color:#fff}
 
   /* 回到顶部 */
   #backTop{
@@ -245,24 +217,26 @@ let state = { sortOrder: 'desc', cards: [], updatedAt: 0 };
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, v); return lsGet(k) === v; }catch(e){ return false; } }
 
-let storageOK = (function(){
-  try{
-    const probe = '__probe__' + Date.now();
-    localStorage.setItem(probe, '1');
-    const ok = localStorage.getItem(probe) === '1';
-    localStorage.removeItem(probe);
-    return ok;
-  }catch(e){ return false; }
-})();
-
 let saveWarned = false;
 function load(){
+  // 清理旧版残留在地址栏里的 #d= 数据（让网址恢复干净），并将其迁移进本地存储
+  let fromHash = null;
+  try{
+    const m = location.hash.match(/(?:^#|&)d=([^&]+)/);
+    if(m) fromHash = JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')))));
+  }catch(e){ fromHash = null; }
+  if(location.hash){
+    try{ history.replaceState(null, '', location.pathname + location.search); }
+    catch(e){ try{ location.hash = ''; }catch(_){} }
+  }
+
   const raw = lsGet(STORAGE_KEY) || lsGet(BACKUP_KEY);
-  if(!raw) return;
   let s = null;
-  try{ s = JSON.parse(raw); }
-  catch(e){ try{ s = JSON.parse(lsGet(BACKUP_KEY)); }catch(_){ s = null; } }
+  if(raw){ try{ s = JSON.parse(raw); }catch(e){ s = null; } }
+  let migrated = false;
+  if(!s && fromHash){ s = fromHash; migrated = true; }
   if(s) state = Object.assign({ sortOrder:'desc', cards:[], updatedAt:0 }, s);
+  if(migrated) save();
 }
 function save(){
   state.updatedAt = Date.now();
@@ -350,31 +324,9 @@ function buildCard(c){
   const chip = document.createElement('div');
   chip.className = 'chip pending';
 
-  // 中央播放按钮
-  const playBtn = document.createElement('button');
-  playBtn.className = 'playbtn';
-  playBtn.title = '播放';
-  playBtn.setAttribute('aria-label','播放');
-  playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>';
-  playBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); const p = video.play(); if(p && p.catch) p.catch(()=>{}); };
-
   cover.appendChild(video);
   cover.appendChild(shimmer);
-  cover.appendChild(playBtn);
   cover.appendChild(chip);
-
-  // 播放优化：同一时间只播放一个；滚出视野自动暂停；播放时隐藏中央按钮
-  video.addEventListener('play', () => {
-    document.querySelectorAll('video').forEach(v => { if(v !== video && !v.paused){ try{ v.pause(); }catch(e){} } });
-    playBtn.classList.add('hide');
-  });
-  video.addEventListener('pause', () => playBtn.classList.remove('hide'));
-  video.addEventListener('ended', () => playBtn.classList.remove('hide'));
-  if('IntersectionObserver' in window){
-    new IntersectionObserver(ents => {
-      ents.forEach(e => { if(!e.isIntersecting && !video.paused){ try{ video.pause(); }catch(err){} } });
-    }, { threshold: 0 }).observe(cover);
-  }
 
   // ---- 尺寸处理：只要已知道尺寸就直接套用、不再联网测量，徽标永远显示真实尺寸 ----
   if(c.w > 0 && c.h > 0){
@@ -620,35 +572,6 @@ document.getElementById('sortBtn').addEventListener('click', toggleSort);
 // 初始化
 load();
 render();
-
-// 存储不可用时的提示
-if(!storageOK){
-  const n = document.createElement('div');
-  n.className = 'notice';
-  n.textContent = '当前浏览器禁用了本地存储，收藏将无法保存。请退出无痕模式，或允许本站存储数据。';
-  document.querySelector('.wrap').insertBefore(n, document.getElementById('list'));
-}
-
-// 诊断面板：在网址后加 ?debug=1 打开，用于排查存储问题
-if(/[?&]debug=1(&|$)/.test(location.search)){
-  let canWrite = false, bytes = -1;
-  try{
-    localStorage.setItem('__t', 'x');
-    canWrite = localStorage.getItem('__t') === 'x';
-    localStorage.removeItem('__t');
-    bytes = (localStorage.getItem(STORAGE_KEY) || '').length;
-  }catch(e){ canWrite = false; bytes = -1; }
-  const d = document.createElement('div');
-  d.className = 'debug';
-  d.innerHTML = '<b>存储诊断</b><br>'
-    + 'origin: ' + location.origin + '<br>'
-    + 'storageOK: ' + storageOK + '<br>'
-    + 'localStorage 读写: ' + (canWrite ? '正常' : '失败') + '<br>'
-    + '已存数据字节: ' + bytes + '<br>'
-    + '卡片数: ' + state.cards.length + '<br>'
-    + 'UA: ' + navigator.userAgent;
-  document.body.appendChild(d);
-}
 </script>
 </body>
 </html>
