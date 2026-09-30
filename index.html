@@ -148,6 +148,13 @@
   .empty svg{width:46px;height:46px;opacity:.4}
   .empty p{font-size:13.5px}
 
+  /* 存储受限提示 */
+  .notice{
+    display:flex;align-items:flex-start;gap:9px;margin:0 0 18px;
+    background:rgba(124,108,255,.12);border:1px solid rgba(124,108,255,.32);
+    color:#cfc9ff;font-size:12.5px;line-height:1.55;padding:10px 14px;border-radius:12px;
+  }
+
   /* 回到顶部 */
   #backTop{
     position:fixed;right:20px;bottom:calc(22px + env(safe-area-inset-bottom));
@@ -210,19 +217,47 @@
 const STORAGE_KEY = 'videoCardTool_v2';
 
 // 状态：sortOrder / cards[{id,url,name,w,h,addedAt}]
-let state = { sortOrder: 'desc', cards: [] };
+let state = { sortOrder: 'desc', cards: [], updatedAt: 0 };
+
+// ---- 存储层：优先 localStorage；若被环境禁用（App 内置浏览器 / 沙箱 iframe / 隐私模式等），
+//      自动退回地址栏 (#) 保存，保证刷新后数据不丢 ----
+let storageOK = false;
+try{
+  const probe = '__video_card_probe__';
+  localStorage.setItem(probe, '1');
+  storageOK = localStorage.getItem(probe) === '1';
+  localStorage.removeItem(probe);
+}catch(e){ storageOK = false; }
+
+const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
+
+function readHash(){
+  try{
+    const m = location.hash.match(/(?:^#|&)d=([^&]+)/);
+    return m ? JSON.parse(b64d(m[1])) : null;
+  }catch(e){ return null; }
+}
+function writeHash(){
+  const frag = '#d=' + b64e(JSON.stringify(state));
+  try{ history.replaceState(null, '', location.href.split('#')[0] + frag); }
+  catch(e){ try{ location.hash = frag; }catch(_){} }
+}
 
 function load(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const s = JSON.parse(raw);
-      state = Object.assign({ sortOrder:'desc', cards:[] }, s);
-    }
-  }catch(e){ state = { sortOrder:'desc', cards:[] }; }
+  let s = null;
+  try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) s = JSON.parse(raw); }catch(e){}
+  const h = readHash();
+  if(h && (!s || (h.updatedAt || 0) >= (s.updatedAt || 0))) s = h;
+  if(s) state = Object.assign({ sortOrder:'desc', cards:[], updatedAt:0 }, s);
 }
 function save(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  state.updatedAt = Date.now();
+  if(storageOK){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return; }
+    catch(e){ storageOK = false; }
+  }
+  writeHash();
 }
 
 const list = document.getElementById('list');
@@ -304,7 +339,7 @@ function buildCard(c){
   cover.appendChild(shimmer);
   cover.appendChild(chip);
 
-  // 若已存过尺寸，立即套用（避免闪烁、也无需再联网读）
+  // ---- 尺寸处理：只要已知道尺寸就直接套用、不再联网测量，徽标永远显示真实尺寸 ----
   if(c.w > 0 && c.h > 0){
     applyAspect(cover, card, c.w, c.h);
     chip.textContent = `${c.w}×${c.h}`;
@@ -312,79 +347,85 @@ function buildCard(c){
     cover.classList.add('ready');
   }else{
     chip.textContent = '读取中';
+    measure();
   }
 
   // 读真实尺寸：多重事件 + 轮询 + 静音试播兜底，并永久记住（应对不触发 loadedmetadata 的内核/省流策略）
-  let settled = false, pollTimer = null, timers = [];
-  const clearTimers = () => { if(pollTimer) clearInterval(pollTimer); timers.forEach(t => clearTimeout(t)); timers = []; };
+  function measure(){
+    let settled = false, pollTimer = null, timers = [];
+    const clearTimers = () => { if(pollTimer) clearInterval(pollTimer); timers.forEach(t => clearTimeout(t)); timers = []; };
 
-  const ok = () => {
-    if(settled) return true;
-    const w = video.videoWidth, h = video.videoHeight;
-    if(w > 0 && h > 0){
-      settled = true; clearTimers();
-      c.w = w; c.h = h; save();
-      applyAspect(cover, card, w, h);
-      chip.textContent = `${w}×${h}`;
-      chip.classList.remove('pending','err');
-      chip.style.pointerEvents = 'none';
-      cover.classList.add('ready');
-      return true;
-    }
-    return false;
-  };
-
-  // 温和地"逼"内核解出元数据：定位到极短时间点 + 静音自动播放后立即暂停
-  const nudge = () => {
-    if(settled) return;
-    try{ video.currentTime = 0.001; }catch(e){}
-    const prevMuted = video.muted;
-    try{
-      video.muted = true;
-      const p = video.play();
-      if(p && p.then){
-        p.then(() => { try{ video.pause(); }catch(e){} video.muted = prevMuted; ok(); })
-         .catch(() => { video.muted = prevMuted; });
+    const ok = () => {
+      if(settled) return true;
+      const w = video.videoWidth, h = video.videoHeight;
+      if(w > 0 && h > 0){
+        settled = true; clearTimers();
+        c.w = w; c.h = h; save();
+        applyAspect(cover, card, w, h);
+        chip.textContent = `${w}×${h}`;
+        chip.classList.remove('pending','err');
+        chip.style.pointerEvents = 'none';
+        chip.style.cursor = 'default';
+        cover.classList.add('ready');
+        return true;
       }
-    }catch(e){ video.muted = prevMuted; }
-    ok();
-  };
+      return false;
+    };
 
-  const fail = () => {
-    settled = true; clearTimers();
-    chip.textContent = '未读取到尺寸 · 点击重试';
-    chip.classList.add('err');
-    chip.classList.remove('pending');
-    chip.style.pointerEvents = 'auto';
-    chip.style.cursor = 'pointer';
-  };
+    // 温和地"逼"内核解出元数据：定位到极短时间点 + 静音自动播放后立即暂停
+    const nudge = () => {
+      if(settled) return;
+      try{ video.currentTime = 0.001; }catch(e){}
+      const prevMuted = video.muted;
+      try{
+        video.muted = true;
+        const p = video.play();
+        if(p && p.then){
+          p.then(() => { try{ video.pause(); }catch(e){} video.muted = prevMuted; ok(); })
+           .catch(() => { video.muted = prevMuted; });
+        }
+      }catch(e){ video.muted = prevMuted; }
+      ok();
+    };
 
-  const startMeasure = () => {
-    clearTimers(); settled = false;
+    const fail = () => {
+      if(settled) return;
+      if(c.w > 0 && c.h > 0){ applyAspect(cover, card, c.w, c.h); return; } // 有缓存就直接用
+      settled = true; clearTimers();
+      chip.textContent = '读取失败 · 点击重试';
+      chip.classList.add('err');
+      chip.classList.remove('pending');
+      chip.style.pointerEvents = 'auto';
+      chip.style.cursor = 'pointer';
+      cover.classList.add('ready');
+    };
+
+    // 临时网络错误不判死，交给轮询与超时处理
+    const onErr = () => {};
+    const arm = () => {
+      clearTimers(); settled = false;
+      pollTimer = setInterval(ok, 350);
+      timers.push(setTimeout(nudge, 3500));
+      timers.push(setTimeout(() => { if(!settled) nudge(); }, 7000));
+      timers.push(setTimeout(fail, 12000));
+    };
+
     ['loadedmetadata','loadeddata','durationchange','canplay','canplaythrough','playing','resize'].forEach(ev =>
       video.addEventListener(ev, ok));
     video.addEventListener('error', onErr);
-    pollTimer = setInterval(ok, 350);
-    timers.push(setTimeout(nudge, 3500));
-    timers.push(setTimeout(() => { if(!settled) nudge(); }, 7000));
-    timers.push(setTimeout(() => { if(!settled) fail(); }, 18000));
-  };
-  const onErr = () => {
-    if(settled) return;
-    // 可能是临时网络问题，先继续轮询/兜底，不立刻判死
-    timers.push(setTimeout(() => { if(!settled) fail(); }, 2000));
-  };
-  // 点徽标可重试
-  chip.addEventListener('click', () => {
-    if(settled && !chip.classList.contains('err')) return;
-    chip.textContent = '读取中';
-    chip.classList.remove('err');
-    chip.classList.add('pending');
-    chip.style.pointerEvents = 'none';
-    try{ video.load(); }catch(e){}
-    startMeasure();
-  });
-  startMeasure();
+    arm();
+
+    // 点徽标可重试
+    chip.addEventListener('click', () => {
+      if(settled && !chip.classList.contains('err')) return;
+      chip.textContent = '读取中';
+      chip.classList.remove('err');
+      chip.classList.add('pending');
+      chip.style.pointerEvents = 'none';
+      try{ video.load(); }catch(e){}
+      arm();
+    });
+  }
 
   // 底部信息条
   const meta = document.createElement('div');
@@ -542,6 +583,12 @@ document.getElementById('sortBtn').addEventListener('click', toggleSort);
 // 初始化
 load();
 render();
+if(!storageOK){
+  const n = document.createElement('div');
+  n.className = 'notice';
+  n.textContent = '当前浏览环境禁用了本地存储，已自动改用地址栏保存，请不要清空地址栏。';
+  document.querySelector('.wrap').insertBefore(n, document.getElementById('list'));
+}
 </script>
 </body>
 </html>
