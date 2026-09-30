@@ -114,6 +114,18 @@
   @keyframes sheen{from{background-position:160% 0}to{background-position:-60% 0}}
   .cover.ready .shimmer{display:none}
 
+  /* 中央播放按钮 */
+  .playbtn{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;z-index:1;
+    background:rgba(12,12,20,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    color:#fff;display:grid;place-items:center;transition:opacity .25s, transform .25s;
+    box-shadow:0 8px 24px -8px rgba(0,0,0,.8);
+  }
+  .playbtn svg{width:24px;height:24px;margin-left:3px}
+  .playbtn:hover{background:rgba(124,108,255,.88)}
+  .playbtn.hide{opacity:0;transform:translate(-50%,-50%) scale(.82);pointer-events:none}
+
   .chip{
     position:absolute;right:9px;top:9px;z-index:2;pointer-events:none;
     background:rgba(10,10,18,.62);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
@@ -154,6 +166,15 @@
     background:rgba(124,108,255,.12);border:1px solid rgba(124,108,255,.32);
     color:#cfc9ff;font-size:12.5px;line-height:1.55;padding:10px 14px;border-radius:12px;
   }
+
+  /* 诊断面板 */
+  .debug{
+    position:fixed;left:10px;bottom:10px;max-width:92vw;z-index:999;
+    background:rgba(10,10,18,.96);border:1px solid var(--line);border-radius:12px;
+    padding:10px 13px;font-size:11px;line-height:1.75;color:#c9c6dd;word-break:break-all;
+    font-family:ui-monospace,Menlo,Consolas,monospace;box-shadow:var(--shadow);
+  }
+  .debug b{color:#fff}
 
   /* 回到顶部 */
   #backTop{
@@ -215,49 +236,43 @@
 
 <script>
 const STORAGE_KEY = 'videoCardTool_v2';
+const BACKUP_KEY  = 'videoCardTool_v2__bak';
 
 // 状态：sortOrder / cards[{id,url,name,w,h,addedAt}]
 let state = { sortOrder: 'desc', cards: [], updatedAt: 0 };
 
-// ---- 存储层：优先 localStorage；若被环境禁用（App 内置浏览器 / 沙箱 iframe / 隐私模式等），
-//      自动退回地址栏 (#) 保存，保证刷新后数据不丢 ----
-let storageOK = false;
-try{
-  const probe = '__video_card_probe__';
-  localStorage.setItem(probe, '1');
-  storageOK = localStorage.getItem(probe) === '1';
-  localStorage.removeItem(probe);
-}catch(e){ storageOK = false; }
+// ---- 存储：只用浏览器本地存储(localStorage)。写入后立即回读校验，并保留一份备份 ----
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, v); return lsGet(k) === v; }catch(e){ return false; } }
 
-const b64e = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-const b64d = s => decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
-
-function readHash(){
+let storageOK = (function(){
   try{
-    const m = location.hash.match(/(?:^#|&)d=([^&]+)/);
-    return m ? JSON.parse(b64d(m[1])) : null;
-  }catch(e){ return null; }
-}
-function writeHash(){
-  const frag = '#d=' + b64e(JSON.stringify(state));
-  try{ history.replaceState(null, '', location.href.split('#')[0] + frag); }
-  catch(e){ try{ location.hash = frag; }catch(_){} }
-}
+    const probe = '__probe__' + Date.now();
+    localStorage.setItem(probe, '1');
+    const ok = localStorage.getItem(probe) === '1';
+    localStorage.removeItem(probe);
+    return ok;
+  }catch(e){ return false; }
+})();
 
+let saveWarned = false;
 function load(){
+  const raw = lsGet(STORAGE_KEY) || lsGet(BACKUP_KEY);
+  if(!raw) return;
   let s = null;
-  try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) s = JSON.parse(raw); }catch(e){}
-  const h = readHash();
-  if(h && (!s || (h.updatedAt || 0) >= (s.updatedAt || 0))) s = h;
+  try{ s = JSON.parse(raw); }
+  catch(e){ try{ s = JSON.parse(lsGet(BACKUP_KEY)); }catch(_){ s = null; } }
   if(s) state = Object.assign({ sortOrder:'desc', cards:[], updatedAt:0 }, s);
 }
 function save(){
   state.updatedAt = Date.now();
-  if(storageOK){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return; }
-    catch(e){ storageOK = false; }
+  const json = JSON.stringify(state);
+  if(lsSet(STORAGE_KEY, json)){
+    lsSet(BACKUP_KEY, json);          // 备份，防止主数据被意外损坏
+    return true;
   }
-  writeHash();
+  if(!saveWarned){ saveWarned = true; toast('本地保存失败：浏览器可能禁用了本地存储'); }
+  return false;
 }
 
 const list = document.getElementById('list');
@@ -335,9 +350,31 @@ function buildCard(c){
   const chip = document.createElement('div');
   chip.className = 'chip pending';
 
+  // 中央播放按钮
+  const playBtn = document.createElement('button');
+  playBtn.className = 'playbtn';
+  playBtn.title = '播放';
+  playBtn.setAttribute('aria-label','播放');
+  playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>';
+  playBtn.onclick = e => { e.preventDefault(); e.stopPropagation(); const p = video.play(); if(p && p.catch) p.catch(()=>{}); };
+
   cover.appendChild(video);
   cover.appendChild(shimmer);
+  cover.appendChild(playBtn);
   cover.appendChild(chip);
+
+  // 播放优化：同一时间只播放一个；滚出视野自动暂停；播放时隐藏中央按钮
+  video.addEventListener('play', () => {
+    document.querySelectorAll('video').forEach(v => { if(v !== video && !v.paused){ try{ v.pause(); }catch(e){} } });
+    playBtn.classList.add('hide');
+  });
+  video.addEventListener('pause', () => playBtn.classList.remove('hide'));
+  video.addEventListener('ended', () => playBtn.classList.remove('hide'));
+  if('IntersectionObserver' in window){
+    new IntersectionObserver(ents => {
+      ents.forEach(e => { if(!e.isIntersecting && !video.paused){ try{ video.pause(); }catch(err){} } });
+    }, { threshold: 0 }).observe(cover);
+  }
 
   // ---- 尺寸处理：只要已知道尺寸就直接套用、不再联网测量，徽标永远显示真实尺寸 ----
   if(c.w > 0 && c.h > 0){
@@ -583,11 +620,34 @@ document.getElementById('sortBtn').addEventListener('click', toggleSort);
 // 初始化
 load();
 render();
+
+// 存储不可用时的提示
 if(!storageOK){
   const n = document.createElement('div');
   n.className = 'notice';
-  n.textContent = '当前浏览环境禁用了本地存储，已自动改用地址栏保存，请不要清空地址栏。';
+  n.textContent = '当前浏览器禁用了本地存储，收藏将无法保存。请退出无痕模式，或允许本站存储数据。';
   document.querySelector('.wrap').insertBefore(n, document.getElementById('list'));
+}
+
+// 诊断面板：在网址后加 ?debug=1 打开，用于排查存储问题
+if(/[?&]debug=1(&|$)/.test(location.search)){
+  let canWrite = false, bytes = -1;
+  try{
+    localStorage.setItem('__t', 'x');
+    canWrite = localStorage.getItem('__t') === 'x';
+    localStorage.removeItem('__t');
+    bytes = (localStorage.getItem(STORAGE_KEY) || '').length;
+  }catch(e){ canWrite = false; bytes = -1; }
+  const d = document.createElement('div');
+  d.className = 'debug';
+  d.innerHTML = '<b>存储诊断</b><br>'
+    + 'origin: ' + location.origin + '<br>'
+    + 'storageOK: ' + storageOK + '<br>'
+    + 'localStorage 读写: ' + (canWrite ? '正常' : '失败') + '<br>'
+    + '已存数据字节: ' + bytes + '<br>'
+    + '卡片数: ' + state.cards.length + '<br>'
+    + 'UA: ' + navigator.userAgent;
+  document.body.appendChild(d);
 }
 </script>
 </body>
