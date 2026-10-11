@@ -363,22 +363,42 @@ function exportData(){
   URL.revokeObjectURL(a.href);
 }
 
+// 兼容多种历史数据格式：裸数组 / {cards:[...]} / {videoCardTool_v2:{cards:[...]}} / localStorage 原始字符串
+function extractImport(data){
+  if(Array.isArray(data)) return { sortOrder:'desc', cards:data };
+  if(!data || typeof data !== 'object') return null;
+  if(Array.isArray(data.cards)) return { sortOrder:data.sortOrder, cards:data.cards };
+  for(const k in data){
+    const v = data[k];
+    if(Array.isArray(v)) return { sortOrder:'desc', cards:v };
+    if(v && typeof v === 'object' && Array.isArray(v.cards)) return { sortOrder:v.sortOrder, cards:v.cards };
+    if(typeof v === 'string'){
+      try{
+        const p = JSON.parse(v);
+        if(Array.isArray(p)) return { sortOrder:'desc', cards:p };
+        if(p && typeof p === 'object' && Array.isArray(p.cards)) return { sortOrder:p.sortOrder, cards:p.cards };
+      }catch(e){}
+    }
+  }
+  return null;
+}
+
 function importData(ev){
   const file = ev.target.files[0];
   if(!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     try{
-      const data = JSON.parse(reader.result);
-      if(!data || !Array.isArray(data.cards)){
-        alert('文件格式不正确，缺少 cards 字段');
+      const parsed = extractImport(JSON.parse(reader.result));
+      if(!parsed){
+        alert('文件格式不正确：未找到可导入的卡片数据（cards）');
         return;
       }
-      if(!confirm(`即将导入 ${data.cards.length} 个视频，将覆盖当前收藏，继续？`)) return;
-      state.sortOrder = data.sortOrder === 'asc' ? 'asc' : 'desc';
-      state.cards = data.cards.map(c => ({
+      if(!confirm(`即将导入 ${parsed.cards.length} 个视频，将覆盖当前收藏，继续？`)) return;
+      state.sortOrder = parsed.sortOrder === 'asc' ? 'asc' : 'desc';
+      state.cards = parsed.cards.map(c => ({
         id: c.id || (Date.now().toString(36) + Math.random().toString(36).slice(2,7)),
-        url: c.url, name: c.name || '', w: c.w||0, h: c.h||0, addedAt: c.addedAt || Date.now()
+        url: c.url, name: c.name || '', w: Number(c.w)||0, h: Number(c.h)||0, addedAt: Number(c.addedAt) || Date.now()
       }));
       save();
       render();
