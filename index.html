@@ -4,114 +4,160 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>视频卡片收藏夹</title>
+<meta name="theme-color" content="#0b0b14">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="favicon.svg">
 <style>
   :root{
-    --bg:#0e0e16; --card:#171723; --line:#2a2a3d;
-    --txt:#e8e6f2; --sub:#9a97b0; --accent:#6c5ce7; --danger:#e5484d;
+    --bg0:#0a0a12; --bg1:#101024;
+    --card:rgba(255,255,255,.045); --card-strong:rgba(255,255,255,.075);
+    --line:rgba(255,255,255,.09); --line-strong:rgba(255,255,255,.2);
+    --txt:#eef0f8; --sub:#9b9bb8;
+    --accent:#7c6cff; --accent2:#4ad8c9; --danger:#ff7a7a;
+    --radius:16px; --shadow:0 20px 50px -24px rgba(0,0,0,.85);
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%;background:var(--bg0)}
   body{
-    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg); color:var(--txt); min-height:100vh; padding:28px 16px 80px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--txt); min-height:100vh; padding:30px 16px 90px;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(1100px 700px at 10% -12%, rgba(124,108,255,.22), transparent 60%),
+      radial-gradient(900px 640px at 102% -4%, rgba(74,216,201,.14), transparent 58%),
+      radial-gradient(900px 900px at 50% 118%, rgba(124,108,255,.12), transparent 62%),
+      linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 55%);
   }
   .wrap{max-width:760px;margin:0 auto}
-  h1{font-size:20px;margin-bottom:6px}
-  .sub{color:var(--sub);font-size:13px;margin-bottom:22px}
 
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
-  .panel h2{font-size:14px;margin-bottom:12px;color:var(--txt)}
-  .panel label{font-size:12px;color:var(--sub);display:block;margin-bottom:6px}
-
-  .form{display:flex;flex-direction:column;gap:12px}
-  input[type=url], input[type=text]{
-    width:100%;background:#0c0c14;border:1px solid var(--line);border-radius:10px;
-    color:var(--txt);padding:12px 14px;font-size:14px;outline:none;transition:.15s;
+  /* 标题 */
+  h1.brand{
+    display:flex;align-items:center;gap:12px;margin-bottom:24px;
+    font-size:21px;font-weight:700;letter-spacing:.2px;
   }
-  input:focus{border-color:var(--accent)}
+  .brand-badge{
+    width:40px;height:40px;border-radius:13px;flex-shrink:0;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    box-shadow:0 12px 26px -12px rgba(124,108,255,.95);
+  }
+  .brand-badge svg{width:20px;height:20px;display:block}
+  h1.brand .t{background:linear-gradient(92deg,#ffffff 22%,#c9c4ff 92%);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* 玻璃面板 */
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;margin-bottom:16px;box-shadow:var(--shadow);
+    backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);
+  }
+
+  input[type=url], input[type=text]{
+    width:100%;background:rgba(8,8,16,.55);border:1px solid var(--line);border-radius:12px;
+    color:var(--txt);padding:12px 14px;font-size:14px;outline:none;transition:.18s;
+  }
+  input::placeholder{color:#6e6e8d}
+  input:focus{border-color:rgba(124,108,255,.8);background:rgba(124,108,255,.07);box-shadow:0 0 0 4px rgba(124,108,255,.12)}
+
+  .addrow{display:flex;gap:10px;flex-wrap:wrap}
+  .addrow #urlInput{flex:1 1 260px}
+  .addrow #nameInput{flex:0 1 190px}
+  .addrow .btn{flex:0 0 auto}
 
   .btn{
-    background:var(--accent);color:#fff;border:none;border-radius:10px;
-    padding:11px 18px;font-size:14px;cursor:pointer;white-space:nowrap;
+    background:linear-gradient(135deg,var(--accent),#9c8dff);color:#fff;border:none;border-radius:12px;
+    padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;
+    box-shadow:0 14px 28px -14px rgba(124,108,255,1);transition:.18s;
   }
-  .btn:active{opacity:.85}
-  .btn.ghost{
-    background:#242438;color:var(--txt);border:1px solid var(--line);
-  }
-  .btn.ghost:hover{background:#2d2d45}
-  .btn.sm{padding:8px 14px;font-size:13px}
-  .btn.ghost.danger{color:var(--danger);border-color:#3a1f22}
-  .btn.ghost.danger:hover{background:#2a181b;border-color:#5a2c31}
+  .btn:hover{transform:translateY(-1px);filter:brightness(1.07)}
+  .btn:active{transform:translateY(0) scale(.985)}
+  .btn.ghost{background:var(--card);color:var(--txt);border:1px solid var(--line);box-shadow:none;font-weight:500}
+  .btn.ghost:hover{background:var(--card-strong);border-color:var(--line-strong)}
+  .btn.sm{padding:9px 14px;font-size:13px;border-radius:10px}
+  .btn.ghost.danger{color:#ff9a9a;border-color:rgba(255,122,122,.28)}
+  .btn.ghost.danger:hover{background:rgba(255,122,122,.1);border-color:rgba(255,122,122,.5)}
 
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .toolbar .spacer{flex:1}
 
-  .list{display:flex;flex-direction:column;gap:18px;margin-top:6px;align-items:center}
-  .empty{color:var(--sub);font-size:14px;text-align:center;padding:40px 0}
+  .list{display:flex;flex-direction:column;gap:20px;margin-top:8px;align-items:center}
+  .empty{color:var(--sub);font-size:14px;text-align:center;padding:60px 0}
 
-  /* 视频卡片 */
+  /* 视频卡片：玻璃质感 + 悬浮 */
   .vcard{
-    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
     overflow:hidden;width:100%;max-width:640px;display:flex;flex-direction:column;
+    box-shadow:var(--shadow);
+    backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);
+    transition:transform .28s cubic-bezier(.22,1,.36,1), border-color .28s, box-shadow .28s, background .28s;
+  }
+  .vcard:hover{
+    transform:translateY(-4px);
+    border-color:rgba(124,108,255,.42);
+    background:var(--card-strong);
+    box-shadow:0 30px 64px -28px rgba(0,0,0,.92), 0 0 0 1px rgba(124,108,255,.14), 0 22px 60px -34px rgba(124,108,255,.75);
   }
   .vcard.portrait{max-width:280px}
 
-  /* 封面：用 padding-bottom 百分比撑出比例（全浏览器通用，不依赖 aspect-ratio） */
   .cover{position:relative;width:100%;height:0;padding-bottom:56.25%;background:#000;overflow:hidden}
   .cover video{position:absolute;left:0;top:0;display:block;width:100%;height:100%;object-fit:contain;background:#000}
+  .cover::after{content:'';position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
   .cover .dim{
-    position:absolute;right:8px;top:8px;background:rgba(0,0,0,.55);color:#cfcbe0;
-    font-size:11px;padding:2px 8px;border-radius:20px;pointer-events:none;
+    position:absolute;right:10px;top:10px;z-index:2;
+    background:rgba(8,8,16,.62);color:#d6d6ee;font-size:11px;letter-spacing:.3px;
+    padding:3px 9px;border-radius:20px;border:1px solid rgba(255,255,255,.1);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);pointer-events:none;
   }
 
-  .meta{display:flex;align-items:center;gap:10px;padding:12px 14px}
+  .meta{display:flex;align-items:center;gap:10px;padding:13px 15px}
   .info{flex:1;min-width:0}
-  .title{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .time{font-size:11px;color:var(--sub);margin-top:3px}
+  .title{font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .time{font-size:11.5px;color:var(--sub);margin-top:3px}
   .copy{
-    background:#242438;color:var(--txt);border:1px solid var(--line);border-radius:8px;
-    padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0;
+    background:var(--card-strong);color:var(--txt);border:1px solid var(--line);border-radius:9px;
+    padding:7px 13px;font-size:13px;cursor:pointer;flex-shrink:0;transition:.16s;
   }
-  .copy:hover{background:#2d2d45}
-  .copy.done{background:#1e3a2a;border-color:#2f5c43;color:#6ee7a0}
+  .copy:hover{background:rgba(255,255,255,.11);border-color:var(--line-strong)}
+  .copy.done{background:rgba(110,231,160,.14);border-color:rgba(110,231,160,.42);color:#6ee7a0}
   .del{
-    background:transparent;color:var(--danger);border:1px solid #3a1f22;border-radius:8px;
-    padding:6px 12px;font-size:13px;cursor:pointer;flex-shrink:0;
+    background:transparent;color:#ff9a9a;border:1px solid rgba(255,122,122,.28);border-radius:9px;
+    padding:7px 13px;font-size:13px;cursor:pointer;flex-shrink:0;transition:.16s;
   }
-  .del:hover{background:#2a181b;border-color:#5a2c31}
+  .del:hover{background:rgba(255,122,122,.1);border-color:rgba(255,122,122,.5)}
 
   /* 回到顶部按钮 */
   #backTop{
-    position:fixed;right:22px;bottom:26px;width:46px;height:46px;border-radius:50%;
-    background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:20px;
-    box-shadow:0 4px 16px rgba(108,92,231,.45);
+    position:fixed;right:22px;bottom:26px;width:48px;height:48px;border-radius:50%;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;cursor:pointer;font-size:20px;
+    box-shadow:0 14px 32px -12px rgba(124,108,255,.95);
     opacity:0;transform:translateY(16px);pointer-events:none;
     transition:opacity .25s, transform .25s;z-index:999;
   }
-  #backTop.show{
-    opacity:1;transform:translateY(0);pointer-events:auto;
+  #backTop.show{opacity:1;transform:translateY(0);pointer-events:auto}
+  #backTop:hover{filter:brightness(1.08)}
+
+  @media (max-width:560px){
+    body{padding:22px 12px 90px}
+    .addrow #nameInput{flex:1 1 100%}
+    .addrow .btn{flex:1 1 100%}
   }
-  #backTop:hover{filter:brightness(1.1)}
 </style>
     <meta name="AIGC" content='{"AIGC":{"Label":"2","ContentProducer":"WUSIGRAM","ProduceID":"KqwzUJ7k3N+1pDpmT/rC7rn46iT7Esf+ID9pfPrBf+M=","ReservedCode1":"Ddt6Q3ZRH/d5RhcnxGHROpf8nIJ/TWR5g9TG2M5T8autC8neJ8Axq/l0M6O8pbvsjLLxLZSrfDoMIx29sOemKg==","ContentPropagator":"","PropagateID":"","ReservedCode2":""}}'>
 </head>
 <body>
 <div class="wrap">
-  <h1>🎬 视频卡片收藏夹</h1>
-  <p class="sub">输入 MP4 直链 + 名称，自动读取真实尺寸，卡片按宽高比自适应，收藏自动持久化。</p>
+  <h1 class="brand">
+    <span class="brand-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5.5v13l11-6.5-11-6.5Z" fill="#fff"/></svg></span>
+    <span class="t">视频卡片收藏夹</span>
+  </h1>
 
-  <!-- 添加面板 -->
+  <!-- 添加栏 -->
   <div class="panel">
-    <h2>添加视频</h2>
-    <div class="form">
-      <div>
-        <label>MP4 链接</label>
-        <input id="urlInput" type="url" placeholder="https://u.pone.rs/xxxx.mp4">
-      </div>
-      <div>
-        <label>名称</label>
-        <input id="nameInput" type="text" placeholder="给这个视频起个名">
-      </div>
-      <button class="btn" onclick="addCard()">＋ 添加卡片</button>
+    <div class="addrow">
+      <input id="urlInput" type="url" placeholder="粘贴 MP4 直链…">
+      <input id="nameInput" type="text" placeholder="名称（可选）">
+      <button class="btn" onclick="addCard()">＋ 添加</button>
     </div>
   </div>
 
